@@ -144,9 +144,13 @@ def main():
         # use config filename as default work_dir if cfg.work_dir is None
         cfg.work_dir = osp.join('./work_dirs',
                                 osp.splitext(osp.basename(args.config))[0])
+
+    #这里设置接着之前的ckpts继续训练    
     # if args.resume_from is not None:
     if args.resume_from is not None and osp.isfile(args.resume_from):
         cfg.resume_from = args.resume_from
+    
+    #如果参数不包括gpu_id,这里回自动设置为0
     if args.gpu_ids is not None:
         cfg.gpu_ids = args.gpu_ids
     else:
