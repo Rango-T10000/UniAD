@@ -45,22 +45,23 @@
             "justMyCode": false
         },
         {
-            "name": "Python: Test",
+            // 这是 Uniad: test.py 的调试配置，进行dist分布式方式调试
+            "name": "Uniad Debugger: test.py",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/tools/test.py",
+            "module": "torch.distributed.launch",
             "args": [
+                "--nproc_per_node=1",  // 这里设置进程数量，修改为你需要的GPU数
+                "tools/test.py",
                 "./projects/configs/stage2_e2e/base_e2e.py",
                 "./ckpts/uniad_base_e2e.pth",
-                "--eval",
-                "bbox"
+                "--launcher", "pytorch"
             ],
             "env": {
-                "PYTHONPATH": "${workspaceFolder}"
+                "PYTHONPATH": "/home2/wzc/UniAD"
             },
             "console": "integratedTerminal",
-            "cwd": "${workspaceFolder}"
-        }
-
+            "justMyCode": false
+        },
     ]
 }
