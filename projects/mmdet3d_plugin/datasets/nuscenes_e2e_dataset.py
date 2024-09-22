@@ -272,12 +272,47 @@ class NuScenesE2EDataset(NuScenesDataset):
                 gt_inds: gt_inds of each frame(list)
         """
 
-        input_dict = self.get_data_info(index)
+        input_dict = self.get_data_info(index) #这个函数中做的修改可以把curr_&_future_frame_e2g_r存下
         self.pre_pipeline(input_dict)
         example = self.pipeline(input_dict)
+
+        #-------------依然把input_dict中有关IMU的数据添加到exmaple中------------
+        example['current_frame_e2g_r'] = input_dict['ego2global_rotation']
+        example['future_frame_e2g_r'] = input_dict['future_frame_e2g_r']
+
+        #------------------------取出 previous frame的IMU数据也更新到当前帧的信息中------------------------
+        #------得到prev_frame的index列表
+        prev_indexs_list = input_dict['prev_indices']
+        if prev_indexs_list:
+            previous_frame_e2g_r = []
+            for i in prev_indexs_list:
+                if i == -1:
+                    # 如果index为-1，表示不存在的prev_frame，使用index=0那一个sample的填充
+                    prev_info = self.data_infos[0]
+                    e2g_r = prev_info['ego2global_rotation']
+                    previous_frame_e2g_r.append(e2g_r)
+                else:
+                    prev_info = self.data_infos[i]
+                    e2g_r = prev_info['ego2global_rotation']
+                    previous_frame_e2g_r.append(e2g_r)
+            example['previous_frame_e2g_r'] = previous_frame_e2g_r
+        else:
+            # 如果没有prev_indexs_list，使用当前帧的e2g_r
+            example['previous_frame_e2g_r'] = [example['current_frame_e2g_r']] * self.queue_length
+
+        #---------提取把对应数据转成tensor--------      
+        current_frame_e2g_r = [to_tensor(example['current_frame_e2g_r'])]
+        previous_frame_e2g_r = [to_tensor(each)for each in example['previous_frame_e2g_r']]
+        future_frame_e2g_r = [to_tensor(each)for each in example['future_frame_e2g_r'][1:]]   
+        example['current_frame_e2g_r'] = current_frame_e2g_r
+        example['previous_frame_e2g_r'] = previous_frame_e2g_r
+        example['gt_future_frame_e2g_r'] = future_frame_e2g_r
+        del example['future_frame_e2g_r']
+
         data_dict = {}
+        #-----------遍历这个example字典把数据放到data_dict字典中，
         for key, value in example.items():
-            if 'l2g' in key:
+            if 'l2g' in key: #local to global?
                 data_dict[key] = to_tensor(value[0])
             else:
                 data_dict[key] = value
@@ -608,6 +643,8 @@ class NuScenesE2EDataset(NuScenesDataset):
         # TODO: Warp all those below occupancy-related codes into a function
         prev_indices, future_indices = self.occ_get_temporal_indices(
             index, self.occ_receptive_field, self.occ_n_future)
+        #-----------把先前帧的inde列表传出来留着用---------
+        input_dict['prev_indices'] = prev_indices
 
         # ego motions of all frames are needed
         all_frames = prev_indices + [index] + future_indices

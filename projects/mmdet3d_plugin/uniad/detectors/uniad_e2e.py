@@ -309,16 +309,24 @@ class UniAD(UniADTrack):
                      gt_segmentation=None,
                      gt_instance=None, 
                      gt_occ_img_is_valid=None,
+
+                     #IMU
+                     #data for IMU predict
+                     current_frame_e2g_r = None,
+                     previous_frame_e2g_r = None,
+                     gt_future_frame_e2g_r = None,
                      **kwargs
                     ):
         """Test function
         """
+        #----------检查 img_metas 是否是列表类型-----------
         for var, name in [(img_metas, 'img_metas')]:
             if not isinstance(var, list):
                 raise TypeError('{} must be a list, but got {}'.format(
                     name, type(var)))
         img = [img] if img is None else img
 
+        #-----------判断场景是否切换----------
         if img_metas[0][0]['scene_token'] != self.prev_frame_info['scene_token']:
             # the first sample of each scene is truncated
             self.prev_frame_info['prev_bev'] = None
@@ -329,7 +337,8 @@ class UniAD(UniADTrack):
         if not self.video_test_mode:
             self.prev_frame_info['prev_bev'] = None
 
-        # Get the delta of ego position and angle between two timestamps.
+        #------------------获取车辆的位置信息和角度变化：------------------
+        # Get the delta of ego position and angle between two timestamps.（curr_frame & prev_frame?）
         tmp_pos = copy.deepcopy(img_metas[0][0]['can_bus'][:3])
         tmp_angle = copy.deepcopy(img_metas[0][0]['can_bus'][-1])
         # first frame
@@ -343,25 +352,31 @@ class UniAD(UniADTrack):
         self.prev_frame_info['prev_pos'] = tmp_pos
         self.prev_frame_info['prev_angle'] = tmp_angle
 
+        #------------------推理的时候就只有curr_frame的图片，就6张图作为输入---------------
+        #-----注意：训练的代码中是3个frame的图片-----
         img = img[0]
         img_metas = img_metas[0]
         timestamp = timestamp[0] if timestamp is not None else None
 
+        #-----------初始化一个用来存储最终推理结果的空列表-----------
         result = [dict() for i in range(len(img_metas))]
+        #------------------------------Track(include backbone)--------------------------
         result_track = self.simple_test_track(img, l2g_t, l2g_r_mat, img_metas, timestamp)
 
         # Upsample bev for tiny model        
-        result_track[0] = self.upsample_bev_if_tiny(result_track[0])
-        
+        result_track[0] = self.upsample_bev_if_tiny(result_track[0])        
         bev_embed = result_track[0]["bev_embed"]
 
+        #-----------------------------Seg-----------------------------
         if self.with_seg_head:
             result_seg =  self.seg_head.forward_test(bev_embed, gt_lane_labels, gt_lane_masks, img_metas, rescale)
 
+        #-----------------------------Motion--------------------------
         if self.with_motion_head:
             result_motion, outs_motion = self.motion_head.forward_test(bev_embed, outs_track=result_track[0], outs_seg=result_seg[0])
             outs_motion['bev_pos'] = result_track[0]['bev_pos']
 
+        #----------------------------Occ------------------------------
         outs_occ = dict()
         if self.with_occ_head:
             occ_no_query = outs_motion['track_query'].shape[1] == 0
@@ -375,6 +390,7 @@ class UniAD(UniADTrack):
             )
             result[0]['occ'] = outs_occ
         
+        #-----------------------Plan--------------------------
         if self.with_planning_head:
             planning_gt=dict(
                 segmentation=gt_segmentation,
@@ -387,7 +403,14 @@ class UniAD(UniADTrack):
                 planning_gt=planning_gt,
                 result_planning=result_planning,
             )
+        
+        #--------------------IMU_predict---------------------
+        #if self.with_IMU_head:
+        #    outs_IMU = self.IMU_head.forward_test(bev_embed, result_planning['sdc_traj'], current_frame_e2g_r, previous_frame_e2g_r, gt_future_frame_e2g_r)
+        # reslut[0] = outs_IMU
 
+
+        #---------去掉一些没必要放在结果中的变量，因为这些都没有了------------
         pop_track_list = ['prev_bev', 'bev_pos', 'bev_embed', 'track_query_embeddings', 'sdc_embedding']
         result_track[0] = pop_elem_in_result(result_track[0], pop_track_list)
 
@@ -399,8 +422,10 @@ class UniAD(UniADTrack):
             result[0]['occ'] = pop_elem_in_result(result[0]['occ'],  \
                 pop_list=['seg_out_mask', 'flow_out', 'future_states_occ', 'pred_ins_masks', 'pred_raw_occ', 'pred_ins_logits', 'pred_ins_sigmoid'])
         
+        #---------最终总结输出结果，遍历一遍results---------
         for i, res in enumerate(result):
-            res['token'] = img_metas[i]['sample_idx']
+            res['token'] = img_metas[i]['sample_idx'] #给每条推理结果加上唯一ID
+            #-----把Track, Seg, Motion的结果也更新到result中-----
             res.update(result_track[i])
             if self.with_motion_head:
                 res.update(result_motion[i])

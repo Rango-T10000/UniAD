@@ -186,8 +186,12 @@ def main():
     if args.seed is not None:
         set_random_seed(args.seed, deterministic=args.deterministic)
 
-    # build the dataloader
+    
+    #实例化这个dataset类成为一个对象，实际是运行projects/mmdet3d_plugin/datasets/nuscenes_e2e_dataset.py的__init__部分
+    #----------这里运行的是那个自定义的Dataset的初始化代码__init__，到后面for循环遍历dataloader的时候才会进其他函数------------
     dataset = build_dataset(cfg.data.test)
+
+    # build the dataloader
     data_loader = build_dataloader(
         dataset,
         samples_per_gpu=samples_per_gpu,
