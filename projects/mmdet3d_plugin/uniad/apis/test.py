@@ -85,7 +85,7 @@ def custom_multi_gpu_test(model, data_loader, tmpdir=None, gpu_collect=False):
     time.sleep(2)  # This line can prevent deadlock problem in some cases.
     have_mask = False
     num_occ = 0
-    #------------------------------开始从dataloader中取batch--------------------
+    #------------------------------开始从dataloader中取batch,共6019个--------------------
     for i, data in enumerate(data_loader):
         with torch.no_grad():
             #--------------让数据经过model-------------

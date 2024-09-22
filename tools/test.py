@@ -232,6 +232,7 @@ def main():
             model.cuda(),
             device_ids=[torch.cuda.current_device()],broadcast_buffers=False)       
         #--------这里dist方式的test是唯一选择--------
+        #--------这个函数会跳转到projects/mmdet3d_plugin/uniad/apis/test.py---------
         outputs = custom_multi_gpu_test(model, data_loader, args.tmpdir, args.gpu_collect)
 
     #-----------------------------最后总结结果？----------------------------

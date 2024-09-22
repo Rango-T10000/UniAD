@@ -53,7 +53,7 @@
             "args": [
                 "--nproc_per_node=1",  // 这里设置进程数量，修改为你需要的GPU数
                 "tools/test.py",
-                "./projects/configs/stage2_e2e/base_e2e.py",
+                "./projects/configs/stage3_e2e_IMU/base_e2e_IMU.py",
                 "./ckpts/uniad_base_e2e.pth",
                 "--launcher", "pytorch"
             ],
