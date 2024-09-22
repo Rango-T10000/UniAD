@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 from mmdet.models.builder import HEADS
+import numpy as np
+from nuscenes.eval.common.utils import quaternion_yaw, Quaternion
 
 
 @HEADS.register_module()
@@ -79,7 +81,7 @@ class IMUHead(nn.Module):
         
         return outs_IMU
 
-    def forward_test(self, bev_embed, traj, current_frame_imu, previous_frame_imu):
+    def forward_test(self, bev_embed, traj, current_frame_imu, previous_frame_imu, gt_future_frame_e2g_r):
         """
         This function is used for inference and testing.
         It returns only the imu_predictions without calculating the loss.
@@ -107,10 +109,23 @@ class IMUHead(nn.Module):
         transformer_output_reshaped = transformer_output[:, total_time_steps - 6:].view(-1, 256)  # reshape to [6, 256]
         imu_predictions = self.prediction_head(transformer_output_reshaped)  # shape [6, 4]
         imu_predictions = imu_predictions.view(1, 6, 4)  # Reshape back to [1, 6, 4] 
+
+        # 5. 预测误差精度计算
+        if len(gt_future_frame_e2g_r) == 0:
+            # 如果是空列表，返回一个默认的零精度
+            accuracy_value = torch.tensor(0.0).to(imu_predictions.device)  # 确保在正确的设备上计算
+            accuracy_IMU = {'accuracy': accuracy_value}
+        else:
+            gt_future_frame_e2g_r = torch.stack(gt_future_frame_e2g_r, dim=0).unsqueeze(0)  # 一般情况下是shape [1, 6, 4]，有时候例外情况是只有5个sample，即[1,5,4]
+            real_future_time_step = gt_future_frame_e2g_r.shape[1]
+            # 使用 self.error 函数计算精度
+            accuracy_value = self.error(imu_predictions[:, :real_future_time_step, :], gt_future_frame_e2g_r)
+            accuracy_IMU = {'accuracy': accuracy_value}
         
 
         outs_IMU = {
             "predict_future_frame_e2g_r": imu_predictions,
+            "accuracy": accuracy_IMU
         }
         
         return outs_IMU
@@ -123,3 +138,43 @@ class IMUHead(nn.Module):
         :return: MSE loss value
         """
         return self.criterion(imu_predictions, gt_future_frame_e2g_r)
+    
+
+    def error(self, imu_predictions, gt_future_frame_e2g_r):
+        n = imu_predictions.shape[1]  # 获取 n 个 time step
+        errors = []
+        
+        for i in range(n):
+            # 获取当前 time step 的预测和 ground truth 的四元数
+            pred_quat = imu_predictions[0, i].cpu().numpy()  # 转换为 numpy array
+            gt_quat = gt_future_frame_e2g_r[0, i].cpu().numpy()
+
+            # 将四元数转换为欧拉角 (yaw, pitch, roll)
+            pred_ypr = Quaternion(pred_quat).yaw_pitch_roll
+            gt_ypr = Quaternion(gt_quat).yaw_pitch_roll
+
+            # 将欧拉角从弧度转换为角度
+            gt_y, gt_p, gt_r = np.array(gt_ypr) / np.pi * 180
+            pred_y, pred_p, pred_r = np.array(pred_ypr) / np.pi * 180
+
+            # 检查并调整角度，如果角度小于 0 则加上 360
+            gt_y = gt_y + 360 if gt_y < 0 else gt_y
+            gt_p = gt_p + 360 if gt_p < 0 else gt_p
+            gt_r = gt_r + 360 if gt_r < 0 else gt_r
+
+            pred_y = pred_y + 360 if pred_y < 0 else pred_y
+            pred_p = pred_p + 360 if pred_p < 0 else pred_p
+            pred_r = pred_r + 360 if pred_r < 0 else pred_r
+
+            # 计算绝对误差
+            abs_error_y = abs(gt_y - pred_y)
+            abs_error_p = abs(gt_p - pred_p)
+            abs_error_r = abs(gt_r - pred_r)
+
+            # 计算当前 time step 的平均绝对误差
+            avg_abs_error = np.mean([abs_error_y, abs_error_p, abs_error_r])
+            errors.append(avg_abs_error)
+
+        # 返回 n 个 time step 的误差平均值
+        return torch.tensor(np.mean(errors), dtype=torch.float32).to(imu_predictions.device)
+

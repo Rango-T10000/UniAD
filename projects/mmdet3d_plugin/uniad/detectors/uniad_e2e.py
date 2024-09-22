@@ -405,9 +405,9 @@ class UniAD(UniADTrack):
             )
         
         #--------------------IMU_predict---------------------
-        #if self.with_IMU_head:
-        #    outs_IMU = self.IMU_head.forward_test(bev_embed, result_planning['sdc_traj'], current_frame_e2g_r, previous_frame_e2g_r, gt_future_frame_e2g_r)
-        # reslut[0] = outs_IMU
+        if self.with_IMU_head:
+           outs_IMU = self.IMU_head.forward_test(bev_embed, result_planning['sdc_traj'], current_frame_e2g_r, previous_frame_e2g_r, gt_future_frame_e2g_r)
+        result[0]['IMU_predict'] = outs_IMU
 
 
         #---------去掉一些没必要放在结果中的变量，因为这些都没有了------------
