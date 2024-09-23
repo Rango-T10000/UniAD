@@ -88,12 +88,12 @@ class IMUHead(nn.Module):
         """
         # 1. Project inputs to the same dimension
         traj_proj = self.traj_proj(traj)  # shape [1, 6, 256]
-        current_imu_proj = self.imu_proj(current_frame_imu[0]).unsqueeze(0).unsqueeze(1)# shape [1, 1, 256]
+        current_imu_proj = self.imu_proj(current_frame_imu[0]).unsqueeze(0)# shape [1, 1, 256]
         
         #previous IMU frames处理，根据其实际sample数量进行处理，过去的都堆在一起
         previous_imu_projs = []
         for imu in previous_frame_imu:
-            previous_imu_projs.append(self.imu_proj(imu).unsqueeze(0).unsqueeze(1))# shape [1, 1, 256] for each  
+            previous_imu_projs.append(self.imu_proj(imu).unsqueeze(0))# shape [1, 1, 256] for each  
         previous_imu_proj = torch.cat(previous_imu_projs, dim=1)  # shape [1, len(previous_frame_imu), 256]
         
         # 2. Concatenate inputs along the time dimension：[1, 1 + len(previous_frame_imu) + 6, 256] 
@@ -116,7 +116,7 @@ class IMUHead(nn.Module):
             accuracy_value = torch.tensor(0.0).to(imu_predictions.device)  # 确保在正确的设备上计算
             accuracy_IMU = {'accuracy': accuracy_value}
         else:
-            gt_future_frame_e2g_r = torch.stack(gt_future_frame_e2g_r, dim=0).unsqueeze(0)  # 一般情况下是shape [1, 6, 4]，有时候例外情况是只有5个sample，即[1,5,4]
+            gt_future_frame_e2g_r = torch.stack(gt_future_frame_e2g_r, dim=0).permute(1, 0, 2)  # 一般情况下是shape [1, 6, 4]，有时候例外情况是只有5个sample，即[1,5,4]
             real_future_time_step = gt_future_frame_e2g_r.shape[1]
             # 使用 self.error 函数计算精度
             accuracy_value = self.error(imu_predictions[:, :real_future_time_step, :], gt_future_frame_e2g_r)

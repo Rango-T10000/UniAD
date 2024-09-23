@@ -75,7 +75,8 @@ def custom_multi_gpu_test(model, data_loader, tmpdir=None, gpu_collect=False):
                       and model.module.with_planning_head
     if eval_planning:
         planning_metrics = PlanningMetric().cuda()
-        
+    
+ 
     bbox_results = []
     mask_results = []
     dataset = data_loader.dataset
@@ -86,12 +87,17 @@ def custom_multi_gpu_test(model, data_loader, tmpdir=None, gpu_collect=False):
     have_mask = False
     num_occ = 0
     #------------------------------开始从dataloader中取batch,共6019个--------------------
+    # num_test = 10
     for i, data in enumerate(data_loader):
+
+        # if i >= num_test:
+        #     break
+
         with torch.no_grad():
             #--------------让数据经过model-------------
             result = model(return_loss=False, rescale=True, **data)
 
-            # EVAL planning
+            # EVAL planning对模型的规划结果进行评估
             if eval_planning:
                 # TODO: Wrap below into a func
                 segmentation = result[0]['planning']['planning_gt']['segmentation']
@@ -103,7 +109,7 @@ def custom_multi_gpu_test(model, data_loader, tmpdir=None, gpu_collect=False):
                 result[0]['command'] = result[0]['planning']['planning_gt']['command']
                 planning_metrics(pred_sdc_traj[:, :6, :2], sdc_planning[0][0,:, :6, :2], sdc_planning_mask[0][0,:, :6, :2], segmentation[0][:, [1,2,3,4,5,6]])
 
-            # Eval Occ
+            # Eval Occ障碍物评估
             if eval_occ:
                 occ_has_invalid_frame = data['gt_occ_has_invalid_frame'][0]
                 occ_to_eval = not occ_has_invalid_frame.item()
@@ -116,6 +122,7 @@ def custom_multi_gpu_test(model, data_loader, tmpdir=None, gpu_collect=False):
                         panoptic_metrics[key](result[0]['occ']['ins_seg_out'][..., limits, limits].contiguous().detach(),
                                                 result[0]['occ']['ins_seg_gt'][..., limits, limits].contiguous())
 
+            #清除不必要的结果
             # Pop out unnecessary occ results, avoid appending it to cpu when collect_results_cpu
             if os.environ.get('ENABLE_PLOT_MODE', None) is None:
                 result[0].pop('occ', None)
@@ -128,6 +135,7 @@ def custom_multi_gpu_test(model, data_loader, tmpdir=None, gpu_collect=False):
                     if k in result[0]['pts_bbox'] and isinstance(result[0]['pts_bbox'][k], torch.Tensor):
                         result[0]['pts_bbox'][k] = result[0]['pts_bbox'][k].detach().cpu()
 
+            #更新推理结果到bbox_results列表中
             # encode mask results
             if isinstance(result, dict):
                 if 'bbox_results' in result.keys():
@@ -139,13 +147,15 @@ def custom_multi_gpu_test(model, data_loader, tmpdir=None, gpu_collect=False):
                     mask_results.extend(mask_result)
                     have_mask = True
             else:
-                batch_size = len(result)
-                bbox_results.extend(result)
+                batch_size = len(result)    #因为result是个list[dict]
+                bbox_results.extend(result) #所以进这个，吧result[0]的所以都加到bbox_results列表了
 
-        if rank == 0:
+        #进度条更新
+        if rank == 0: #如果是主进程（rank == 0），根据批次大小和世界大小（用于多GPU并行训练）更新进度条
             for _ in range(batch_size * world_size):
                 prog_bar.update()
 
+#-------------------------------------for循环得出所有推理结果后总结结果-------------------------------------
     # collect results from all ranks
     if gpu_collect:
         bbox_results = collect_results_gpu(bbox_results, len(dataset))
@@ -153,20 +163,24 @@ def custom_multi_gpu_test(model, data_loader, tmpdir=None, gpu_collect=False):
             mask_results = collect_results_gpu(mask_results, len(dataset))
         else:
             mask_results = None
-    else:
+    else:  #--------会使用CPU来总结结果---------
         bbox_results = collect_results_cpu(bbox_results, len(dataset), tmpdir)
         tmpdir = tmpdir+'_mask' if tmpdir is not None else None
-        if have_mask:
+        if have_mask: #不会进
             mask_results = collect_results_cpu(mask_results, len(dataset), tmpdir)
         else:
             mask_results = None
 
+    #规划（Planning）结果计算
     if eval_planning:
         planning_results = planning_metrics.compute()
         planning_metrics.reset()
 
+    #将推理结果汇总到 ret_results 字典中
     ret_results = dict()
     ret_results['bbox_results'] = bbox_results
+
+
     if eval_occ:
         occ_results = {}
         for key, grid in EVALUATION_RANGES.items():
@@ -182,11 +196,13 @@ def custom_multi_gpu_test(model, data_loader, tmpdir=None, gpu_collect=False):
         occ_results['num_occ'] = num_occ  # count on one gpu
         occ_results['ratio_occ'] = num_occ / len(dataset)  # count on one gpu, but reflect the relative ratio
         ret_results['occ_results_computed'] = occ_results
+    
     if eval_planning:
         ret_results['planning_results_computed'] = planning_results
 
     if mask_results is not None:
         ret_results['mask_results'] = mask_results
+    #----------最终，返回一个包含所有汇总结果的字典 ret_results：----------
     return ret_results
 
 

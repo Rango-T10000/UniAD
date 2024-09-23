@@ -20,6 +20,7 @@ from projects.mmdet3d_plugin.uniad.apis.test import custom_multi_gpu_test
 from mmdet.datasets import replace_ImageToTensor
 import time
 import os.path as osp
+import json
 
 warnings.filterwarnings("ignore")
 
@@ -190,6 +191,7 @@ def main():
     #实例化这个dataset类成为一个对象，实际是运行projects/mmdet3d_plugin/datasets/nuscenes_e2e_dataset.py的__init__部分
     #----------这里运行的是那个自定义的Dataset的初始化代码__init__，到后面for循环遍历dataloader的时候才会进其他函数------------
     dataset = build_dataset(cfg.data.test)
+    dataset.data_infos = dataset.data_infos[:100] #这里设置为只测试100个samples
 
     # build the dataloader
     data_loader = build_dataloader(
@@ -239,20 +241,68 @@ def main():
         #--------这个函数会跳转到projects/mmdet3d_plugin/uniad/apis/test.py---------
         outputs = custom_multi_gpu_test(model, data_loader, args.tmpdir, args.gpu_collect)
 
-    #-----------------------------最后总结结果？----------------------------
-    rank, _ = get_dist_info()
+    #-----------------------------最后总结结果----------------------------
+    rank, _ = get_dist_info()   #由主进程（rank 0）/CUDA0 总结并保存推理结果
     if rank == 0:
+        #---------------将推理结果保存到指定的文件中------------
         if args.out:
             print(f'\nwriting results to {args.out}')
             #assert False
             mmcv.dump(outputs, args.out)
             #outputs = mmcv.load(args.out)
+
+            #-------单独保存IMU的推理结果--------
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+            output_file = os.path.join("/home2/wzc/UniAD/output", f"{timestamp}_IMU.json")
+        # 准备要保存的数据
+        imu_data = []
+        accuracies = []  # 用于存储所有的accuracy
+
+        # 遍历outputs中的每个bbox结果，提取IMU_predict相关数据
+        for bbox_result in outputs['bbox_results']:
+            imu_predict = bbox_result.get('IMU_predict', {})
+            predict_future_frame_e2g_r = imu_predict.get('predict_future_frame_e2g_r', [])
+            accuracy = imu_predict.get('accuracy', {})           
+            # 检查predict_future_frame_e2g_r是否有元素
+            if predict_future_frame_e2g_r.numel() > 0:
+                # 转换张量为列表
+                predict_future_frame_e2g_r_list = predict_future_frame_e2g_r.tolist()  # 转换为Python列表
+                # 遍历每个预测时间点的四元数，并与accuracy一起保存
+                for quaternion in predict_future_frame_e2g_r_list[0]:
+                    accuracy_value = accuracy.get('accuracy', None)
+                    if isinstance(quaternion, torch.Tensor):
+                        quaternion = quaternion.tolist()  # 转换为列表
+                    imu_data.append({
+                        "Prediction": quaternion,  # 四元数 (w, x, y, z)
+                        "accuracy": accuracy_value.item()
+                    })
+                    if accuracy_value is not None:
+                        accuracies.append(accuracy_value)
+
+        # 计算accuracy的平均值
+        average_accuracy = sum(accuracies) / len(accuracies) if accuracies else 0
+        average_accuracy = average_accuracy.item()
+
+        # 将IMU数据写入到json文件中，每行一个记录
+        with open(output_file, 'w') as f:
+            for record in imu_data:
+                json.dump(record, f)
+                f.write('\n')
+            
+            # 在文件最后一行写入所有accuracy的平均值
+            json.dump({"average_accuracy": average_accuracy}, f)
+
+        print(f"IMU prediction data has been saved to {output_file}")          
+        #---------------------------------------------------------------------
+
         kwargs = {} if args.eval_options is None else args.eval_options
+        #为评估结果生成一个前缀路径，用于存放输出文件，如：test/my_config/Mon_Sep_11_12_34_56_2023
         kwargs['jsonfile_prefix'] = osp.join('test', args.config.split(
             '/')[-1].split('.')[-2], time.ctime().replace(' ', '_').replace(':', '_'))
+        
+        #-------------不会进-----------
         if args.format_only:
             dataset.format_results(outputs, **kwargs)
-
         if args.eval:
             eval_kwargs = cfg.get('evaluation', {}).copy()
             # hard-code way to remove EvalHook args
@@ -262,7 +312,6 @@ def main():
             ]:
                 eval_kwargs.pop(key, None)
             eval_kwargs.update(dict(metric=args.eval, **kwargs))
-
             print(dataset.evaluate(outputs, **eval_kwargs))
 
 

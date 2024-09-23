@@ -942,6 +942,7 @@ class NuScenesE2EDataset(NuScenesDataset):
                 `jsonfile_prefix` is not specified.
         """
         assert isinstance(results, list), 'results must be a list'
+        #----------我不想测试所有的samples----------
         assert len(results) == len(self), (
             'The length of results is not equal to the dataset len: {} != {}'.
             format(len(results), len(self)))
