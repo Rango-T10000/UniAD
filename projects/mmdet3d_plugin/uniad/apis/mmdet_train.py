@@ -198,7 +198,7 @@ def custom_train_detector(model,
             hook = build_from_cfg(hook_cfg, HOOKS)
             runner.register_hook(hook, priority=priority)
 
-    #-------------------------设置是否接着之前保存的ckpt继续训练----------------------
+    #-------------------------设置是否接着之前保存的ckpt继续训练：在开启训练的脚本.sh加这个参数----------------------
     if cfg.resume_from and os.path.exists(cfg.resume_from):
         runner.resume(cfg.resume_from)
     elif cfg.load_from:

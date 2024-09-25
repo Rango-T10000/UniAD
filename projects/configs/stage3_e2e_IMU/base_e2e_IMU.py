@@ -694,6 +694,7 @@ lr_config = dict(
     warmup_ratio=1.0 / 3,
     min_lr_ratio=1e-3,
 )
+#--------------------------------在这里指定训练多少个epoch---------------------------
 total_epochs = 20
 evaluation = dict(
     interval=4,
