@@ -137,8 +137,21 @@ class IMUHead(nn.Module):
         :param gt_future_frame_e2g_r: Ground truth IMU data of shape [1, 6, 4]
         :return: MSE loss value
         """
-        return self.criterion(imu_predictions, gt_future_frame_e2g_r)
-    
+        # return self.criterion(imu_predictions, gt_future_frame_e2g_r)
+        #MSE作为loss并不合理，这忽略了四元数的几何意义，我是希望两个Quaternion所表示的角度尽可能一致，而不是Quaternion数值本身
+        #思路1: 先把Quaternion转换为欧拉角，并规范到[0~360 degree]，再计算三个角度的mse作为loss
+        #思路2: 计算两个Quaternion的点积，再换算为角度，把这个角度作为loss
+        
+        # 对每个时间步的预测和真实值计算四元数的点积
+        dot_product = torch.sum(imu_predictions * gt_future_frame_e2g_r, dim=-1)
+        dot_product = torch.clamp(dot_product, -1.0, 1.0)  # 确保点积的值在合法范围内
+        angle_diff = 2 * torch.acos(torch.abs(dot_product))  # 计算角度差(单位是rad)
+        
+        # 返回平均角度差作为 loss
+        return torch.mean(angle_diff)
+
+
+
 
     def error(self, imu_predictions, gt_future_frame_e2g_r):
         n = imu_predictions.shape[1]  # 获取 n 个 time step
