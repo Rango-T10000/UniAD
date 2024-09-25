@@ -152,3 +152,5 @@ debug/
 core.*
 
 nas/*
+
+log_copy/*
