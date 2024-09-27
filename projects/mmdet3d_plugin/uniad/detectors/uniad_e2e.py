@@ -115,7 +115,7 @@ class UniAD(UniADTrack):
         augmentations.
         """
         if return_loss:
-            return self.forward_train(**kwargs)
+            return self.forward_train_IMU(**kwargs)  #return self.forward_train(**kwargs)
         else:
             return self.forward_test(**kwargs)
         
@@ -290,6 +290,124 @@ class UniAD(UniADTrack):
         loss_factor = self.task_loss_weight[prefix] #获取损失权重
         loss_dict = {f"{prefix}.{k}" : v*loss_factor for k, v in loss_dict.items()}
         return loss_dict
+
+    #-----------照搬forward_test的前行传播计算逻辑，让Uniad的模块只给我计算输出，依次来训练IMU_head---------
+    #-----------每次只读一帧图片进去，跟推理时候的数据处理逻辑一致，但是结合训练IMU_head的逻辑------------
+    def forward_train_IMU(self,
+                          img=None,
+                          img_metas=None,
+                          l2g_t=None,
+                          l2g_r_mat=None,
+                          timestamp=None,
+                          gt_lane_labels=None,
+                          gt_lane_masks=None,
+                          rescale=False,
+                          # planning gt(for evaluation only)
+                          command=None,
+                          # Occ_gt (for evaluation only)
+                          gt_segmentation=None,
+                          gt_instance=None, 
+                          gt_occ_img_is_valid=None,
+                          #IMU
+                          #data for IMU predict
+                          current_frame_e2g_r = None,
+                          previous_frame_e2g_r = None,
+                          gt_future_frame_e2g_r = None,
+                          **kwargs
+                          ):
+        losses = dict()
+        
+        #提前修正下某些数据已满足之后的计算代码
+        gt_lane_labels = [gt_lane_labels]       
+        gt_lane_masks = [gt_lane_masks]        
+        command = command[0]
+        current_frame_e2g_r[0] = current_frame_e2g_r[0].squeeze(0)
+        previous_frame_e2g_r = [frame.squeeze(0) for frame in previous_frame_e2g_r]
+        gt_future_frame_e2g_r = [frame.squeeze(0) for frame in gt_future_frame_e2g_r]
+
+
+        #----------检查 img_metas 是否是列表类型（没用，代码不会进去）-----------
+        for var, name in [(img_metas, 'img_metas')]:
+            if not isinstance(var, list):
+                raise TypeError('{} must be a list, but got {}'.format(
+                    name, type(var)))
+        img = [img] if img is None else img #废话，img[0]是1，6，3，928，1600（预处理后的图片大小）
+
+        #-----------判断场景是否切换----------
+        if img_metas[0][0]['scene_token'] != self.prev_frame_info['scene_token']:
+            # the first sample of each scene is truncated
+            self.prev_frame_info['prev_bev'] = None
+        # update idx，self.prev_frame_info['scene_token']是专门留出来存上一帧的scene_token的
+        self.prev_frame_info['scene_token'] = img_metas[0][0]['scene_token']
+
+        # do not use temporal information 没用
+        if not self.video_test_mode:
+            self.prev_frame_info['prev_bev'] = None
+
+        #------------------获取车辆的位置信息和角度变化：更新这些信息到img_metas------------------
+        # Get the delta of ego position and angle between two timestamps.（curr_frame & prev_frame?）
+        tmp_pos = copy.deepcopy(img_metas[0][0]['can_bus'][:3])
+        tmp_angle = copy.deepcopy(img_metas[0][0]['can_bus'][-1])
+        # first frame
+        if self.prev_frame_info['scene_token'] is None:
+            img_metas[0][0]['can_bus'][:3] = 0
+            img_metas[0][0]['can_bus'][-1] = 0
+        # following frames
+        else:
+            img_metas[0][0]['can_bus'][:3] -= self.prev_frame_info['prev_pos']
+            img_metas[0][0]['can_bus'][-1] -= self.prev_frame_info['prev_angle']
+        self.prev_frame_info['prev_pos'] = tmp_pos
+        self.prev_frame_info['prev_angle'] = tmp_angle
+
+        #------------------推理的时候就只有curr_frame的图片，就6张图作为输入---------------
+        #-----注意：训练的代码中是3个frame的图片-----
+        img = img[0]
+        img_metas = img_metas[0]
+        timestamp = timestamp[0] if timestamp is not None else None
+
+        #------------------------------Track(include backbone)--------------------------
+        result_track = self.simple_test_track(img, l2g_t, l2g_r_mat, img_metas, timestamp) 
+        # Upsample bev for tiny model        
+        result_track[0] = self.upsample_bev_if_tiny(result_track[0])        
+        bev_embed = result_track[0]["bev_embed"]
+
+        #-----------------------------Seg-----------------------------
+        if self.with_seg_head:
+            result_seg =  self.seg_head.forward_test(bev_embed, gt_lane_labels, gt_lane_masks, img_metas, rescale)
+
+        #-----------------------------Motion--------------------------
+        if self.with_motion_head:
+            result_motion, outs_motion = self.motion_head.forward_test(bev_embed, outs_track=result_track[0], outs_seg=result_seg[0])
+            outs_motion['bev_pos'] = result_track[0]['bev_pos']
+
+        #----------------------------Occ------------------------------
+        outs_occ = dict()
+        if self.with_occ_head:
+            occ_no_query = outs_motion['track_query'].shape[1] == 0
+            outs_occ = self.occ_head.forward_test(
+                bev_embed, 
+                outs_motion,
+                no_query = occ_no_query,
+                gt_segmentation=gt_segmentation,
+                gt_instance=gt_instance,
+                gt_img_is_valid=gt_occ_img_is_valid,
+            )
+        
+        #-----------------------Plan--------------------------
+        if self.with_planning_head:
+            result_planning = self.planning_head.forward_test(bev_embed, outs_motion, outs_occ, command)
+        
+        #--------------------IMU_predict---------------------
+        if self.with_IMU_head:
+            outs_IMU = self.IMU_head.forward_train(bev_embed, result_planning['sdc_traj'], current_frame_e2g_r, previous_frame_e2g_r, gt_future_frame_e2g_r)
+            losses_IMU = outs_IMU['losses']
+            losses_IMU = self.loss_weighted_and_prefixed(losses_IMU, prefix='IMU_predict')
+            losses.update(losses_IMU)
+
+        #----处理损失函数值中可能出现的NaN值，将其替换为0，以确保进一步的计算不会受到NaN值的影响----
+        for k,v in losses.items():
+            losses[k] = torch.nan_to_num(v)
+        return losses
 
     def forward_test(self,
                      img=None,

@@ -258,6 +258,88 @@ class NuScenesE2EDataset(NuScenesDataset):
         data_queue = self.union2one(data_queue)
         return data_queue
 
+    #---------------forward_train那里改为了用Uniad推理的代码+IMU_predict训练的代码------------------
+    #---------------所以这里的数据准备也是要按照原本推理的数据准备方式，即照搬prepare_test_data---------
+    def prepare_train_data_IMU(self, index):
+
+        input_dict = self.get_data_info(index) #这个函数中做的修改可以把curr_&_future_frame_e2g_r存下
+        self.pre_pipeline(input_dict)
+        example = self.pipeline(input_dict)
+
+        #-------------依然把input_dict中有关IMU的数据添加到exmaple中------------
+        example['current_frame_e2g_r'] = input_dict['ego2global_rotation']
+        example['future_frame_e2g_r'] = input_dict['future_frame_e2g_r']
+
+        #------------------------取出 previous frame的IMU数据也更新到当前帧的信息中------------------------
+        #------得到prev_frame的index列表
+        prev_indexs_list = input_dict['prev_indices']
+        if prev_indexs_list:
+            previous_frame_e2g_r = []
+            for i in prev_indexs_list:
+                if i == -1:
+                    # 如果index为-1，表示不存在的prev_frame，使用index=0那一个sample的填充
+                    prev_info = self.data_infos[0]
+                    e2g_r = prev_info['ego2global_rotation']
+                    previous_frame_e2g_r.append(e2g_r)
+                else:
+                    prev_info = self.data_infos[i]
+                    e2g_r = prev_info['ego2global_rotation']
+                    previous_frame_e2g_r.append(e2g_r)
+            example['previous_frame_e2g_r'] = previous_frame_e2g_r
+        else:
+            # 如果没有prev_indexs_list，使用当前帧的e2g_r
+            example['previous_frame_e2g_r'] = [example['current_frame_e2g_r']] * self.queue_length
+
+        #---------提取把对应数据转成tensor--------      
+        current_frame_e2g_r = [to_tensor(example['current_frame_e2g_r'])]
+        previous_frame_e2g_r = [to_tensor(each)for each in example['previous_frame_e2g_r']]
+        future_frame_e2g_r = [to_tensor(each)for each in example['future_frame_e2g_r'][1:]]   
+        example['current_frame_e2g_r'] = current_frame_e2g_r
+        example['previous_frame_e2g_r'] = previous_frame_e2g_r
+        example['gt_future_frame_e2g_r'] = future_frame_e2g_r
+        del example['future_frame_e2g_r']
+
+        data_dict = {}
+        #-----------遍历这个example字典把数据放到data_dict字典中，
+        for key, value in example.items():
+            if 'l2g' in key: #local to global?
+                data_dict[key] = to_tensor((value.tolist())[0])
+            else:
+                data_dict[key] = value
+        
+        #-------删掉没用的------
+        del data_dict['gt_bboxes_3d']
+        del data_dict['gt_labels_3d']
+        del data_dict['gt_inds']
+        del data_dict['gt_fut_traj']
+        del data_dict['gt_fut_traj_mask']
+        del data_dict['gt_past_traj']
+        del data_dict['gt_past_traj_mask']
+        del data_dict['gt_sdc_bbox']
+        del data_dict['gt_sdc_label']
+        del data_dict['gt_sdc_fut_traj']
+        del data_dict['gt_sdc_fut_traj_mask']
+        del data_dict['gt_lane_bboxes']
+        del data_dict['gt_centerness']
+        del data_dict['gt_offset']
+        del data_dict['gt_flow']
+        del data_dict['gt_occ_has_invalid_frame']
+        del data_dict['gt_backward_flow']
+        del data_dict['gt_future_boxes']
+        del data_dict['gt_future_labels']
+        del data_dict['sdc_planning']
+        del data_dict['sdc_planning_mask']
+
+
+        #有的数据需要提前转成tensor
+        # for key, value in data_dict['img_metas'].data.items():
+        #     data_dict['img_metas'].data[key] = [to_tensor(v) for v in value]
+        data_dict['timestamp'] = to_tensor(data_dict['timestamp'])
+        data_dict['command'] = to_tensor(data_dict['command'])
+        data_dict['gt_occ_img_is_valid'] = to_tensor(data_dict['gt_occ_img_is_valid'])
+
+        return data_dict
+
     def prepare_test_data(self, index):
         """
         Training data preparation.
@@ -627,6 +709,7 @@ class NuScenesE2EDataset(NuScenesDataset):
 
         #--------计算这个sample的ego to global的R，T，patch_angle---------
         #--------将这些信息更新到input_dict的['can_bus']中---------
+        #--------can_bus 是一个引用类型，修改的值会自动更新到input_dict中------
         rotation = Quaternion(input_dict['ego2global_rotation'])
         translation = input_dict['ego2global_translation']
         can_bus = input_dict['can_bus']
@@ -812,7 +895,7 @@ class NuScenesE2EDataset(NuScenesDataset):
             return self.prepare_test_data(idx)
         while True:
 
-            data = self.prepare_train_data(idx)
+            data = self.prepare_train_data_IMU(idx)   #原本是data = self.prepare_train_data(idx)
             if data is None:
                 idx = self._rand_another(idx)
                 continue
