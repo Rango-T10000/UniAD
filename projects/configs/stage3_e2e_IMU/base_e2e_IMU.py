@@ -696,16 +696,27 @@ lr_config = dict(
 )
 #--------------------------------在这里指定训练多少个epoch---------------------------
 total_epochs = 20
+
 evaluation = dict(
-    interval=4,
+    interval=4,  #这个是基于你下面是EpochBasedRunner还是IterBasedRunner
     pipeline=test_pipeline,
     planning_evaluation_strategy=planning_evaluation_strategy,
 )
+
 runner = dict(type="EpochBasedRunner", max_epochs=total_epochs)
+checkpoint_config = dict(interval=1)
+
+
+#-----------debug时想按iter的配置--------------
+# evaluation = dict(interval=5000) #我不想让其在2100个iter之前进入推理，所以这里设一个比较大的数
+# runner = dict(type="IterBasedRunner", max_iters=28130 * 20) #想跟EpochBasedRunner完全保持一致，就要这样设置
+# checkpoint_config = dict(interval=1000, by_epoch=False)
+
+
 log_config = dict(
     interval=10, hooks=[dict(type="TextLoggerHook"), dict(type="TensorboardLoggerHook")]
 )
-checkpoint_config = dict(interval=1)
+
 load_from = "ckpts/uniad_base_e2e.pth"
 
 find_unused_parameters = True

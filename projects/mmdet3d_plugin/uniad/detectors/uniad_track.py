@@ -93,26 +93,7 @@ class UniADTrack(MVXTwoStageDetector):
         self.vehicle_id_list = vehicle_id_list
         self.pc_range = pc_range
         self.queue_length = queue_length
-
-        #------------------对于Frozen的设置-----------------
-        if freeze_img_backbone:
-            if freeze_bn:
-                self.img_backbone.eval() #评估模式即停止在推理过程中动态更新，为了保证冻结参数时能够稳定的推理？
-            for param in self.img_backbone.parameters():
-                param.requires_grad = False
-
-        if freeze_img_neck:
-            if freeze_bn:
-                self.img_neck.eval()
-            for param in self.img_neck.parameters():
-                param.requires_grad = False
-        
-        #---------------------
-        if freeze_pts_bbox_head:
-            if freeze_bn:
-                self.pts_bbox_head.eval()
-            for param in self.pts_bbox_head.parameters():
-                param.requires_grad = False       
+         
 
         # temporal
         self.video_test_mode = video_test_mode
@@ -159,6 +140,45 @@ class UniADTrack(MVXTwoStageDetector):
         self.gt_iou_threshold = gt_iou_threshold
         self.bev_h, self.bev_w = self.pts_bbox_head.bev_h, self.pts_bbox_head.bev_w
         self.freeze_bev_encoder = freeze_bev_encoder
+        #------------------对于Frozen的设置-----------------
+        # Freeze img_backbone
+        if freeze_img_backbone:
+            if freeze_bn:
+                self.img_backbone.eval()
+            for param in self.img_backbone.parameters():
+                param.requires_grad = False
+
+        # Freeze img_neck
+        if freeze_img_neck:
+            if freeze_bn:
+                self.img_neck.eval()
+            for param in self.img_neck.parameters():
+                param.requires_grad = False
+
+        # Freeze pts_bbox_head
+        if freeze_pts_bbox_head:
+            if freeze_bn:
+                self.pts_bbox_head.eval()
+            for param in self.pts_bbox_head.parameters():
+                param.requires_grad = False
+
+        # Freeze query_embedding
+        for param in self.query_embedding.parameters():
+            param.requires_grad = False
+
+        # Freeze reference_points
+        for param in self.reference_points.parameters():
+            param.requires_grad = False
+
+        # Freeze memory_bank
+        for param in self.memory_bank.parameters():
+            param.requires_grad = False
+
+        # Freeze query_interact
+        for param in self.query_interact.parameters():
+            param.requires_grad = False
+
+
 
     def extract_img_feat(self, img, len_queue=None):
         """Extract features of images."""
@@ -193,7 +213,11 @@ class UniADTrack(MVXTwoStageDetector):
         num_queries, dim = self.query_embedding.weight.shape  # (300, 256 * 2)
         device = self.query_embedding.weight.device
         query = self.query_embedding.weight
-        track_instances.ref_pts = self.reference_points(query[..., : dim // 2])
+        # track_instances.ref_pts = self.reference_points(query[..., : dim // 2])
+        query_tensor = query.clone()
+        track_instances.ref_pts = (self.reference_points(query_tensor[..., : dim // 2])).clone()
+
+
 
         # init boxes: xy, wl, z, h, sin, cos, vx, vy, vz
         pred_boxes_init = torch.zeros(
