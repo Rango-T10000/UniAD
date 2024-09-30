@@ -26,6 +26,8 @@ warnings.filterwarnings("ignore")
 
 from mmcv.utils import TORCH_VERSION, digit_version
 
+import os
+import json
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Train a detector')
@@ -219,6 +221,32 @@ def main():
         train_cfg=cfg.get('train_cfg'),
         test_cfg=cfg.get('test_cfg'))
     model.init_weights()
+
+
+    #--------打印看一下是否Uniad的整个部分都被frozen，终端显示的行数有限可能打印不全---------
+    # for name, param in model.named_parameters():
+    #     if not param.requires_grad:
+    #         print(f"Parameter {name} is frozen")
+    #     else:
+    #         print(f"Parameter {name} is not frozen")
+
+    #-------保存成一个json文件，全部检查一下是否Uniad的整个部分都被frozen---------
+    # 确保保存的文件夹存在
+    # output_dir = 'loss_images'
+    # if not os.path.exists(output_dir):
+    #     os.makedirs(output_dir)
+    # # 用于存储参数状态的字典
+    # params_status = {}
+    # # 检查模型及其父类所有参数的 requires_grad 状态
+    # for name, param in model.named_parameters():
+    #     params_status[name] = {
+    #         'requires_grad': param.requires_grad
+    #     }
+    # # 将结果保存为 JSON 文件
+    # output_file = os.path.join(output_dir, 'model_params_status.json')
+    # with open(output_file, 'w') as f:
+    #     json.dump(params_status, f, indent=4)
+
 
     logger.info(f'Model:\n{model}')
 
