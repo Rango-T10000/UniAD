@@ -154,3 +154,6 @@ core.*
 nas/*
 
 log_copy/*
+
+.vscode/*
+.vscode/launch.json
