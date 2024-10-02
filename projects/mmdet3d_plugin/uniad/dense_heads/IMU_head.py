@@ -34,9 +34,6 @@ class IMUHead(nn.Module):
         mlp_layers_list.append(nn.Linear(mlp_hidden_dim, imu_dim))  # Final layer for predicting IMU
 
         self.prediction_head = nn.Sequential(*mlp_layers_list)
-  
-        # Loss function (MSELoss)
-        self.criterion = nn.MSELoss()
 
     def forward_train(self, bev_embed, traj, current_frame_imu, previous_frame_imu, gt_future_frame_e2g_r):
         # 1. Project inputs to the same dimension
@@ -61,8 +58,13 @@ class IMUHead(nn.Module):
         total_time_steps = input_sequence.shape[1]
         transformer_output_reshaped = transformer_output[:, total_time_steps - 6:].view(-1, 256)  # reshape to [6, 256]
         imu_predictions = self.prediction_head(transformer_output_reshaped)  # shape [6, 4]
-        imu_predictions = imu_predictions.view(1, 6, 4)  # Reshape back to [1, 6, 4] 
         
+        
+        #将预测值转化为单位四元数
+        imu_predictions_norm = torch.norm(imu_predictions, dim=-1, keepdim=True)  # 计算四元数的范数
+        imu_predictions = imu_predictions / imu_predictions_norm  # 归一化四元数，使其范数为1        
+        imu_predictions = imu_predictions.view(1, 6, 4)  # Reshape back to [1, 6, 4] 
+
         # 5. Compute the loss using the predicted and ground truth IMU data
         if len(gt_future_frame_e2g_r) == 0:
             # 如果是空列表，返回一个默认的零损失
@@ -108,6 +110,10 @@ class IMUHead(nn.Module):
         total_time_steps = input_sequence.shape[1]
         transformer_output_reshaped = transformer_output[:, total_time_steps - 6:].view(-1, 256)  # reshape to [6, 256]
         imu_predictions = self.prediction_head(transformer_output_reshaped)  # shape [6, 4]
+
+        #将预测值转化为单位四元数
+        imu_predictions_norm = torch.norm(imu_predictions, dim=-1, keepdim=True)  # 计算四元数的范数
+        imu_predictions = imu_predictions / imu_predictions_norm  # 归一化四元数，使其范数为1        
         imu_predictions = imu_predictions.view(1, 6, 4)  # Reshape back to [1, 6, 4] 
 
         # 5. 预测误差精度计算
@@ -130,6 +136,31 @@ class IMUHead(nn.Module):
         
         return outs_IMU
 
+    def quaternion_to_euler(self, q):
+        """将四元数转换为欧拉角 (yaw, pitch, roll)"""
+
+        #先判断是否为单位四元数
+        sum_of_squares = torch.dot(q, q)
+        if abs(1.0 - sum_of_squares) > 1e-14:
+            norm = torch.sqrt(sum_of_squares)
+            if norm > 0:
+                q = q /norm
+
+        w, x, y, z = q[..., 0], q[..., 1], q[..., 2], q[..., 3]
+
+        #以下公式应该要确定是单位四元数吧，再检查公式
+        # Calculate yaw (around z-axis)
+        yaw = torch.atan2(2 * (w * z - x * y), 1 - 2 * (y**2 + z**2))
+
+        # Calculate pitch (around y'-axis)
+        pitch = torch.asin(2 * (w * y + z * x))
+
+        # Calculate roll (around x''-axis)
+        roll = torch.atan2(2 * (w * x - y * z), 1 - 2 * (x**2 + y**2))
+
+        return torch.stack([yaw, pitch, roll], dim=-1)  # 返回 [yaw, pitch, roll]
+
+
     def loss(self, imu_predictions, gt_future_frame_e2g_r):
         """
         Calculate the MSE loss between predicted IMU data and ground truth IMU data.
@@ -142,49 +173,43 @@ class IMUHead(nn.Module):
         #思路1: 先把Quaternion转换为欧拉角，并规范到[0~360 degree]，再计算三个角度的mse作为loss
         #思路2: 计算两个Quaternion的点积，再换算为角度，把这个角度作为loss
         
-        # # 对每个时间步的预测和真实值计算四元数的点积
-        # dot_product = torch.sum(imu_predictions * gt_future_frame_e2g_r, dim=-1)
-        # dot_product = torch.clamp(dot_product, -1.0, 1.0)  # 确保点积的值在合法范围内
-        # angle_diff = 2 * torch.acos(torch.abs(dot_product))  # 计算角度差(单位是rad)
+        # 对每个时间步的预测和真实值计算四元数的点积
+        dot_product = torch.sum(imu_predictions * gt_future_frame_e2g_r, dim=-1)
+        dot_product = torch.clamp(dot_product, -1.0, 1.0)  # 确保点积的值在合法范围内
+        angle_diff = 2 * torch.acos(torch.abs(dot_product))  # 计算角度差(单位是rad)
         
-        # # 返回平均角度差作为 loss
-        # return torch.mean(angle_diff)
-        n = imu_predictions.shape[1]  # 获取 n 个 time step
-        errors = []
-        
-        for i in range(n):
-            # 获取当前 time step 的预测和 ground truth 的四元数
-            pred_quat = imu_predictions[0, i]  # 直接保留为 Tensor
-            gt_quat = gt_future_frame_e2g_r[0, i]
+        # 返回平均角度差作为 loss
+        return torch.mean(angle_diff)
+        # n = imu_predictions.shape[1]  # 获取 n 个 time step
+        # errors = []
 
-            # 将四元数转换为欧拉角 (yaw, pitch, roll)
-            pred_ypr = Quaternion(pred_quat.detach().cpu().numpy()).yaw_pitch_roll
-            gt_ypr = Quaternion(gt_quat.detach().cpu().numpy()).yaw_pitch_roll
+        # for i in range(n):
+        #     # 获取当前 time step 的预测和 ground truth 的四元数
+        #     pred_quat = imu_predictions[0, i]  # 直接保留为 Tensor
+        #     gt_quat = gt_future_frame_e2g_r[0, i]
 
-            # 将欧拉角从弧度转换为角度
-            gt_y, gt_p, gt_r = torch.tensor(np.array(gt_ypr) / np.pi * 180).to(imu_predictions.device)
-            pred_y, pred_p, pred_r = torch.tensor(np.array(pred_ypr) / np.pi * 180).to(imu_predictions.device)
+        #     # 将四元数转换为欧拉角 (yaw, pitch, roll)
+        #     pred_ypr = self.quaternion_to_euler(pred_quat)  # 预测欧拉角
+        #     gt_ypr = self.quaternion_to_euler(gt_quat)  # Ground truth 欧拉角
 
-            # 检查并调整角度，如果角度小于 0 则加上 360
-            gt_y = gt_y + 360 if gt_y < 0 else gt_y
-            gt_p = gt_p + 360 if gt_p < 0 else gt_p
-            gt_r = gt_r + 360 if gt_r < 0 else gt_r
+        #     # 将欧拉角从弧度转换为角度
+        #     pi_tensor = torch.tensor(np.pi, device=imu_predictions.device)
+        #     gt_ypr = gt_ypr / pi_tensor * 180
+        #     pred_ypr = pred_ypr / pi_tensor * 180
 
-            pred_y = pred_y + 360 if pred_y < 0 else pred_y
-            pred_p = pred_p + 360 if pred_p < 0 else pred_p
-            pred_r = pred_r + 360 if pred_r < 0 else pred_r
+        #     # 调整角度，如果角度小于 0 则加上 360
+        #     gt_ypr = torch.where(gt_ypr < 0, gt_ypr + 360, gt_ypr)
+        #     pred_ypr = torch.where(pred_ypr < 0, pred_ypr + 360, pred_ypr)
 
-            # 计算绝对误差
-            abs_error_y = torch.abs(gt_y - pred_y)
-            abs_error_p = torch.abs(gt_p - pred_p)
-            abs_error_r = torch.abs(gt_r - pred_r)
+        #     # 计算绝对误差
+        #     abs_error = torch.abs(gt_ypr - pred_ypr)
 
-            # 计算当前 time step 的平均绝对误差
-            avg_abs_error = torch.mean(torch.tensor([abs_error_y, abs_error_p, abs_error_r]))
-            errors.append(avg_abs_error)
+        #     # 计算当前 time step 的平均绝对误差
+        #     avg_abs_error = torch.mean(abs_error)
+        #     errors.append(avg_abs_error)
 
-        # 返回 n 个 time step 的误差平均值
-        return torch.mean(torch.stack(errors))
+        # # 返回 n 个 time step 的误差平均值
+        # return torch.mean(torch.stack(errors))
 
     def error(self, imu_predictions, gt_future_frame_e2g_r):
         n = imu_predictions.shape[1]  # 获取 n 个 time step
