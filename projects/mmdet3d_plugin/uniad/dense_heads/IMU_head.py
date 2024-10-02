@@ -202,7 +202,8 @@ class IMUHead(nn.Module):
             pred_ypr = torch.where(pred_ypr < 0, pred_ypr + 360, pred_ypr)
 
             # 计算绝对误差
-            abs_error = torch.abs(gt_ypr - pred_ypr)
+            error_angle = torch.abs(gt_ypr - pred_ypr)
+            abs_error = torch.where(error_angle > 180, 360 - error_angle, error_angle)
 
             # 计算当前 time step 的平均绝对误差
             avg_abs_error = torch.mean(abs_error)
@@ -238,9 +239,9 @@ class IMUHead(nn.Module):
             pred_r = pred_r + 360 if pred_r < 0 else pred_r
 
             # 计算绝对误差
-            abs_error_y = abs(gt_y - pred_y)
-            abs_error_p = abs(gt_p - pred_p)
-            abs_error_r = abs(gt_r - pred_r)
+            abs_error_y = 360 - abs(gt_y - pred_y) if abs(gt_y - pred_y) > 180 else abs(gt_y - pred_y)
+            abs_error_p = 360 - abs(gt_p - pred_p) if abs(gt_p - pred_p) > 180 else abs(gt_p - pred_p)
+            abs_error_r = 360 - abs(gt_r - pred_r) if abs(gt_r - pred_r) > 180 else abs(gt_r - pred_r)
 
             # 计算当前 time step 的平均绝对误差
             avg_abs_error = np.mean([abs_error_y, abs_error_p, abs_error_r])
