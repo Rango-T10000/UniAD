@@ -12,6 +12,11 @@ import os
 from ..dense_heads.seg_head_plugin import IOU
 from .uniad_track import UniADTrack
 from mmdet.models.builder import build_head
+import matplotlib.pyplot as plt
+from datetime import datetime
+
+# 全局计数器
+file_counter = 0
 
 @DETECTORS.register_module()
 class UniAD(UniADTrack):
@@ -507,6 +512,8 @@ class UniAD(UniADTrack):
                 gt_img_is_valid=gt_occ_img_is_valid,
             )
             result[0]['occ'] = outs_occ
+            # visualize_occ_grid_with_instances(outs_occ, timestep=3)
+            # visualize_occ_grid_with_instances_gt(outs_occ, timestep=3)
         
         #-----------------------Plan--------------------------
         if self.with_planning_head:
@@ -563,3 +570,121 @@ def pop_elem_in_result(task_result:dict, pop_list:list=None):
         for pop_k in pop_list:
             task_result.pop(pop_k, None)
     return task_result
+
+#可视化outs_occ中的关键占用预测输出
+def visualize_occ_grid_with_instances(outs_occ, timestep=0, save_dir='/home2/wzc/UniAD/middle_output_visual'):
+    """
+    生成200x200的网格图，背景用seg_out表示占用情况（浅灰色），有实例的方格显示为红色并保存。
+
+    参数：
+    - outs_occ: 输出字典，包含占用预测的不同输出
+    - timestep: 要可视化的时间步
+    - save_dir: 保存图片的目录路径
+    """
+    global file_counter  # 使用全局变量
+
+    # 创建保存目录（如果不存在）
+    os.makedirs(save_dir, exist_ok=True)
+    
+    # 读取outs_occ中的数据
+    seg_out = outs_occ['seg_out'][0, timestep, 0]        # [200, 200]
+    ins_seg_out = outs_occ['ins_seg_out'][0, timestep]   # [200, 200]
+
+    # 初始化背景为白色
+    grid_size = seg_out.shape
+    background = torch.ones((grid_size[0], grid_size[1], 3), device=seg_out.device)  # 白色背景
+
+    # seg_out 表示已占用的网格（浅灰色）
+    background[seg_out > 0] = torch.tensor([0.0, 0.0, 1.0], device=seg_out.device)  # 浅灰色表示被占用的区域
+
+    # ins_seg_out 表示实例占用的网格（红色）
+    background[ins_seg_out > 0] = torch.tensor([1.0, 0.0, 0.0], device=seg_out.device)  # 红色表示存在实例的区域
+
+    # 将图片转移到CPU以便进行可视化
+    background_cpu = background.cpu()
+
+    # 绘制图像并添加方格线
+    fig, ax = plt.subplots(figsize=(8, 8))
+    ax.imshow(background_cpu)
+    # 设置坐标刻度，使其与200x200网格一致
+    ax.set_xticks([x - 0.5 for x in range(201)], minor=True)
+    ax.set_yticks([y - 0.5 for y in range(201)], minor=True)
+    
+    # 设置网格线样式
+    ax.grid(which="minor", color="black", linestyle='-', linewidth=0.5)
+    ax.tick_params(which="minor", size=0)  # 隐藏刻度
+
+    ax.set_xticks([])
+    ax.set_yticks([])
+    plt.title(f'Occupancy grid Prediction Visualization at Timestep {timestep}')
+
+    # # 获取当前时间并格式化
+    # current_time = datetime.now().strftime('%Y%m%d%H%M')
+
+    # 保存图片
+    save_path = os.path.join(save_dir, f'combined_seg_ins_occ_Prediction_timestep_{timestep}_{file_counter}.png')
+    plt.savefig(save_path, bbox_inches='tight', pad_inches=0.1)
+    plt.close()
+    
+    print(f"带有seg_out和ins_seg_out显示的占用网络图片已保存至: {save_path}")
+    
+    # 递增计数器
+    file_counter += 1
+
+def visualize_occ_grid_with_instances_gt(outs_occ, timestep=0, save_dir='/home2/wzc/UniAD/middle_output_visual'):
+    """
+    生成200x200的网格图，背景用seg_out表示占用情况（浅灰色），有实例的方格显示为红色并保存。
+
+    参数：
+    - outs_occ: 输出字典，包含占用预测的不同输出
+    - timestep: 要可视化的时间步
+    - save_dir: 保存图片的目录路径
+    """
+    global file_counter  # 使用全局变量
+    # 创建保存目录（如果不存在）
+    os.makedirs(save_dir, exist_ok=True)
+    
+    # 读取outs_occ中的数据
+    seg_out = outs_occ['seg_gt'][0, timestep, 0]        # [200, 200]
+    ins_seg_out = outs_occ['ins_seg_gt'][0, timestep]   # [200, 200]
+
+    # 初始化背景为白色
+    grid_size = seg_out.shape
+    background = torch.ones((grid_size[0], grid_size[1], 3), device=seg_out.device)  # 白色背景
+
+    # seg_out 表示已占用的网格（浅灰色）
+    background[seg_out > 0] = torch.tensor([0.0, 0.0, 1.0], device=seg_out.device)  # 浅灰色表示被占用的区域
+
+    # ins_seg_out 表示实例占用的网格（红色）
+    background[ins_seg_out > 0] = torch.tensor([1.0, 0.0, 0.0], device=seg_out.device)  # 红色表示存在实例的区域
+
+    # 将图片转移到CPU以便进行可视化
+    background_cpu = background.cpu()
+
+    # 绘制图像并添加方格线
+    fig, ax = plt.subplots(figsize=(8, 8))
+    ax.imshow(background_cpu)
+    # 设置坐标刻度，使其与200x200网格一致
+    ax.set_xticks([x - 0.5 for x in range(201)], minor=True)
+    ax.set_yticks([y - 0.5 for y in range(201)], minor=True)
+    
+    # 设置网格线样式
+    ax.grid(which="minor", color="black", linestyle='-', linewidth=0.5)
+    ax.tick_params(which="minor", size=0)  # 隐藏刻度
+
+    ax.set_xticks([])
+    ax.set_yticks([])
+    plt.title(f'Occupancy grid gt Visualization at Timestep {timestep}')
+
+    # # 获取当前时间并格式化
+    # current_time = datetime.now().strftime('%Y%m%d%H%M')
+    
+    # 保存图片
+    save_path = os.path.join(save_dir, f'combined_seg_ins_occ_gt_timestep_{timestep}_{file_counter}.png')
+    plt.savefig(save_path, bbox_inches='tight', pad_inches=0.1)
+    plt.close()
+    
+    print(f"带有seg_out和ins_seg_out显示的占用网络图片已保存至: {save_path}")
+    
+    # 递增计数器
+    file_counter += 1    

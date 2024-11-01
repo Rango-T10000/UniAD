@@ -157,3 +157,6 @@ log_copy/*
 
 .vscode/*
 .vscode/launch.json
+
+tools/uniad_non_dist_train.sh
+middle_output_visual/*
