@@ -270,6 +270,26 @@ class NuScenesE2EDataset(NuScenesDataset):
         example['current_frame_e2g_r'] = input_dict['ego2global_rotation']
         example['future_frame_e2g_r'] = input_dict['future_frame_e2g_r']
 
+        # #------------------------取出 previous frame的IMU数据也更新到当前帧的信息中------------------------
+        # future_indexs_list  = input_dict['future_indices']
+        # if future_indexs_list:
+        #     future_frame_e2g_r = []
+        #     for i in future_indexs_list:
+        #         if i == -1:
+        #             # 如果future_frame_e2g_r中为-1，表示不存在的future_frame，使用当前帧的e2g_r填充
+        #             future_info = self.data_infos[index]
+        #             e2g_r = future_info['ego2global_rotation']
+        #             future_frame_e2g_r.append(e2g_r)
+        #         else:
+        #             # 使用正常的future_frame的e2g_r
+        #             future_info = self.data_infos[i]
+        #             e2g_r = future_info['ego2global_rotation']
+        #             future_frame_e2g_r.append(e2g_r)
+        #     example['future_frame_e2g_r'] = future_frame_e2g_r
+        # else:
+        #     # 如果没有future_frame_e2g_r，使用当前帧的e2g_r填充
+        #     example['future_frame_e2g_r'] = [example['current_frame_e2g_r']] * self.queue_length        
+
         #------------------------取出 previous frame的IMU数据也更新到当前帧的信息中------------------------
         #------得到prev_frame的index列表
         prev_indexs_list = input_dict['prev_indices']
@@ -277,8 +297,8 @@ class NuScenesE2EDataset(NuScenesDataset):
             previous_frame_e2g_r = []
             for i in prev_indexs_list:
                 if i == -1:
-                    # 如果index为-1，表示不存在的prev_frame，使用index=0那一个sample的填充
-                    prev_info = self.data_infos[0]
+                    # 如果index为-1，表示不存在的prev_frame，使用当前index那一个sample的填充
+                    prev_info = self.data_infos[index]
                     e2g_r = prev_info['ego2global_rotation']
                     previous_frame_e2g_r.append(e2g_r)
                 else:
@@ -369,8 +389,8 @@ class NuScenesE2EDataset(NuScenesDataset):
             previous_frame_e2g_r = []
             for i in prev_indexs_list:
                 if i == -1:
-                    # 如果index为-1，表示不存在的prev_frame，使用index=0那一个sample的填充
-                    prev_info = self.data_infos[0]
+                    # 如果index为-1，表示不存在的prev_frame，使用index那一个sample的填充
+                    prev_info = self.data_infos[index]
                     e2g_r = prev_info['ego2global_rotation']
                     previous_frame_e2g_r.append(e2g_r)
                 else:
@@ -728,6 +748,7 @@ class NuScenesE2EDataset(NuScenesDataset):
             index, self.occ_receptive_field, self.occ_n_future)
         #-----------把先前帧的inde列表传出来留着用---------
         input_dict['prev_indices'] = prev_indices
+        input_dict['future_indices'] = future_indices
 
         # ego motions of all frames are needed
         all_frames = prev_indices + [index] + future_indices

@@ -47,14 +47,7 @@ def plot_loss_curve(epoch_loss_dict, save_dir):
 
 #-----------------------------------开始配置作图信息------------------------------------
 # 日志文件路径列表
-log_files = [
-    'projects/work_dirs/stage3_e2e_IMU/base_e2e_IMU/20240917_145321.log.json',
-    'projects/work_dirs/stage3_e2e_IMU/base_e2e_IMU/20240918_102939.log.json',
-    'projects/work_dirs/stage3_e2e_IMU/base_e2e_IMU/20240918_201954.log.json',
-    'projects/work_dirs/stage3_e2e_IMU/base_e2e_IMU/20240919_095423.log.json',
-    'projects/work_dirs/stage3_e2e_IMU/base_e2e_IMU/20240920_163737.log.json',
-    'projects/work_dirs/stage3_e2e_IMU/base_e2e_IMU/20240920_235513.log.json'
-]
+log_files = ['projects/work_dirs/stage3_e2e_IMU/base_e2e_IMU/20240930_100742.log.json']
 
 # 调用解析日志函数解析log.json文件
 epoch_loss_dict = parse_log_files(log_files)

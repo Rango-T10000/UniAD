@@ -253,7 +253,7 @@ def main():
 
             #-------单独保存IMU的推理结果--------
             timestamp = time.strftime("%Y%m%d_%H%M%S")
-            output_file = os.path.join("/home2/wzc/UniAD/output", f"{timestamp}_IMU.json")
+            output_file = os.path.join("/home2/zc/UniAD/output", f"{timestamp}_IMU.json")
         # 准备要保存的数据
         imu_data = []
         accuracies = []  # 用于存储所有的accuracy

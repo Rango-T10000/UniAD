@@ -36,3 +36,4 @@ python $(dirname "$0")/train.py \
 
 
 #--resume-from projects/work_dirs/stage3_e2e_IMU/base_e2e_IMU/latest.pth \
+#那个total_epochs = 40   #注意，每训20个epoch，想再继续的话这这里就得改大！也要改

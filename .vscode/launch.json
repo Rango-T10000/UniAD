@@ -7,7 +7,8 @@
             "type": "debugpy",
             "request": "launch",
             "program": "${file}",
-            "console": "integratedTerminal"
+            "console": "integratedTerminal",
+            "justMyCode": false
             
         },
         {
@@ -15,14 +16,14 @@
             "name": "Uniad Debugger: train.py",
             "type": "debugpy",
             "request": "launch",
-            "program": "/home2/wzc/UniAD/tools/train.py",
+            "program": "/home2/zc/UniAD/tools/train.py",
             "args": [
-                "/home2/wzc/UniAD/projects/configs/stage3_e2e_IMU/base_e2e_IMU.py",
+                "/home2/zc/UniAD/projects/configs/stage3_e2e_IMU/base_e2e_IMU.py",
                 "--gpus", 
                 "1"
             ],
             "env": {
-                "PYTHONPATH": "/home2/wzc/UniAD"
+                "PYTHONPATH": "/home2/zc/UniAD"
             },
             "console": "integratedTerminal",
             "justMyCode": false
@@ -58,7 +59,7 @@
                 "--launcher", "pytorch"
             ],
             "env": {
-                "PYTHONPATH": "/home2/wzc/UniAD"
+                "PYTHONPATH": "/home2/zc/UniAD"
             },
             "console": "integratedTerminal",
             "justMyCode": false
