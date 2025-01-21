@@ -262,53 +262,32 @@ class NuScenesE2EDataset(NuScenesDataset):
     #---------------所以这里的数据准备也是要按照原本推理的数据准备方式，即照搬prepare_test_data---------
     def prepare_train_data_IMU(self, index):
 
-        input_dict = self.get_data_info(index) #这个函数中做的修改可以把curr_&_future_frame_e2g_r存下
+        input_dict = self.get_data_info(index) #这个函数中做的修改可以把curr_&_future_frame_e2g_r存下(curr和future帧的IMU数据)
         self.pre_pipeline(input_dict)
         example = self.pipeline(input_dict)
 
         #-------------依然把input_dict中有关IMU的数据添加到exmaple中------------
         example['current_frame_e2g_r'] = input_dict['ego2global_rotation']
-        example['future_frame_e2g_r'] = input_dict['future_frame_e2g_r']
-
-        # #------------------------取出 previous frame的IMU数据也更新到当前帧的信息中------------------------
-        # future_indexs_list  = input_dict['future_indices']
-        # if future_indexs_list:
-        #     future_frame_e2g_r = []
-        #     for i in future_indexs_list:
-        #         if i == -1:
-        #             # 如果future_frame_e2g_r中为-1，表示不存在的future_frame，使用当前帧的e2g_r填充
-        #             future_info = self.data_infos[index]
-        #             e2g_r = future_info['ego2global_rotation']
-        #             future_frame_e2g_r.append(e2g_r)
-        #         else:
-        #             # 使用正常的future_frame的e2g_r
-        #             future_info = self.data_infos[i]
-        #             e2g_r = future_info['ego2global_rotation']
-        #             future_frame_e2g_r.append(e2g_r)
-        #     example['future_frame_e2g_r'] = future_frame_e2g_r
-        # else:
-        #     # 如果没有future_frame_e2g_r，使用当前帧的e2g_r填充
-        #     example['future_frame_e2g_r'] = [example['current_frame_e2g_r']] * self.queue_length        
+        example['future_frame_e2g_r'] = input_dict['future_frame_e2g_r']      
 
         #------------------------取出 previous frame的IMU数据也更新到当前帧的信息中------------------------
         #------得到prev_frame的index列表
+        invalid_marker = [float('nan')] * 4  # 使用 NaN 表示无效数据
         prev_indexs_list = input_dict['prev_indices']
         if prev_indexs_list:
             previous_frame_e2g_r = []
             for i in prev_indexs_list:
                 if i == -1:
-                    # 如果index为-1，表示不存在的prev_frame，使用当前index那一个sample的填充
-                    prev_info = self.data_infos[index]
-                    e2g_r = prev_info['ego2global_rotation']
-                    previous_frame_e2g_r.append(e2g_r)
+                    # 如果index为-1，表示不存在的prev_frame，使用 NaN 表示无效数据填充          
+                    previous_frame_e2g_r.append(invalid_marker)
                 else:
                     prev_info = self.data_infos[i]
                     e2g_r = prev_info['ego2global_rotation']
                     previous_frame_e2g_r.append(e2g_r)
             example['previous_frame_e2g_r'] = previous_frame_e2g_r
         else:
-            # 如果没有prev_indexs_list，使用当前帧的e2g_r
-            example['previous_frame_e2g_r'] = [example['current_frame_e2g_r']] * self.queue_length
+            # 如果没有prev_indexs_list，使用 NaN 表示无效数据填充
+            example['previous_frame_e2g_r'] = invalid_marker * (self.occ_receptive_field-1)
 
         #---------提取把对应数据转成tensor--------      
         current_frame_e2g_r = [to_tensor(example['current_frame_e2g_r'])]
@@ -384,23 +363,22 @@ class NuScenesE2EDataset(NuScenesDataset):
 
         #------------------------取出 previous frame的IMU数据也更新到当前帧的信息中------------------------
         #------得到prev_frame的index列表
+        invalid_marker = [float('nan')] * 4  # 使用 NaN 表示无效数据
         prev_indexs_list = input_dict['prev_indices']
         if prev_indexs_list:
             previous_frame_e2g_r = []
             for i in prev_indexs_list:
                 if i == -1:
-                    # 如果index为-1，表示不存在的prev_frame，使用index那一个sample的填充
-                    prev_info = self.data_infos[index]
-                    e2g_r = prev_info['ego2global_rotation']
-                    previous_frame_e2g_r.append(e2g_r)
+                    # 如果index为-1，表示不存在的prev_frame，使用使用 NaN 表示无效数据填充          
+                    previous_frame_e2g_r.append(invalid_marker)
                 else:
                     prev_info = self.data_infos[i]
                     e2g_r = prev_info['ego2global_rotation']
                     previous_frame_e2g_r.append(e2g_r)
             example['previous_frame_e2g_r'] = previous_frame_e2g_r
         else:
-            # 如果没有prev_indexs_list，使用当前帧的e2g_r
-            example['previous_frame_e2g_r'] = [example['current_frame_e2g_r']] * self.queue_length
+            # 如果没有prev_indexs_list，使用 NaN 表示无效数据填充
+            example['previous_frame_e2g_r'] = invalid_marker * (self.occ_receptive_field-1)
 
         #---------提取把对应数据转成tensor--------      
         current_frame_e2g_r = [to_tensor(example['current_frame_e2g_r'])]
@@ -560,22 +538,22 @@ class NuScenesE2EDataset(NuScenesDataset):
             origin=(0.5, 0.5, 0.5)).convert_to(self.box_mode_3d)
 
         anns_results = dict(
-            gt_bboxes_3d=gt_bboxes_3d,
-            gt_labels_3d=gt_labels_3d,
-            gt_names=gt_names_3d,
-            gt_inds=gt_inds,
-            gt_fut_traj=gt_fut_traj,
-            gt_fut_traj_mask=gt_fut_traj_mask,
-            gt_past_traj=gt_past_traj,
-            gt_past_traj_mask=gt_past_traj_mask,
-            gt_sdc_bbox=gt_sdc_bbox,
-            gt_sdc_label=gt_sdc_label,
-            gt_sdc_fut_traj=gt_sdc_fut_traj,
-            gt_sdc_fut_traj_mask=gt_sdc_fut_traj_mask,
-            sdc_planning=sdc_planning,
-            sdc_planning_mask=sdc_planning_mask,
-            command=command,
-        )
+            gt_bboxes_3d=gt_bboxes_3d,  # 其他交通参与者的 3D 边界框的真实值
+            gt_labels_3d=gt_labels_3d,  # 其他交通参与者的 3D 边界框的标签的真实值
+            gt_names=gt_names_3d,       # 其他交通参与者的 3D 边界框的名称的真实值
+            gt_inds=gt_inds,            # 其他交通参与者的索引
+            gt_fut_traj=gt_fut_traj,    # 其他交通参与者的未来轨迹的真实值
+            gt_fut_traj_mask=gt_fut_traj_mask,  # 其他交通参与者的未来轨迹掩码的真实值
+            gt_past_traj=gt_past_traj,  # 其他交通参与者的过去轨迹的真实值
+            gt_past_traj_mask=gt_past_traj_mask,  # 其他交通参与者的过去轨迹掩码的真实值
+            gt_sdc_bbox=gt_sdc_bbox,    # 自主驾驶车辆的 3D 边界框的真实值
+            gt_sdc_label=gt_sdc_label,  # 自主驾驶车辆的标签的真实值
+            gt_sdc_fut_traj=gt_sdc_fut_traj,  # 自主驾驶车辆的未来轨迹的真实值
+            gt_sdc_fut_traj_mask=gt_sdc_fut_traj_mask,  # 自主驾驶车辆的未来轨迹掩码的真实值
+            sdc_planning=sdc_planning,  # 自主驾驶车辆的规划
+            sdc_planning_mask=sdc_planning_mask,  # 自主驾驶车辆的规划掩码
+            command=command,            # 控制命令
+        )        
         assert gt_fut_traj.shape[0] == gt_labels_3d.shape[0]
         assert gt_past_traj.shape[0] == gt_labels_3d.shape[0]
         return anns_results
@@ -742,7 +720,7 @@ class NuScenesE2EDataset(NuScenesDataset):
         can_bus[-2] = patch_angle / 180 * np.pi
         can_bus[-1] = patch_angle
 
-        #------------当前的sample的索引是index,计算出前2个，以及未来6个索引值---------
+        #------------当前的sample的索引是index,计算出前几个，取决于occ_receptive_field，以及未来6个索引值---------
         # TODO: Warp all those below occupancy-related codes into a function
         prev_indices, future_indices = self.occ_get_temporal_indices(
             index, self.occ_receptive_field, self.occ_n_future)
@@ -762,7 +740,7 @@ class NuScenesE2EDataset(NuScenesDataset):
         # might have None if not in the same sequence
         future_frames = [index] + future_indices
 
-        #-------计算出所有的 l2e, e2g 的R，T对 index 和 future_indices-------
+        #-------对 index 和 future_indices,即 current frame + future frame 提取出e2g-------
         # get lidar to ego to global transforms for each curr and fut index
         occ_transforms = self.occ_get_transforms(future_frames)  # might have None
         input_dict.update(occ_transforms)
@@ -821,6 +799,7 @@ class NuScenesE2EDataset(NuScenesDataset):
         e2g_t_vecs = []
         #---------------------
         future_frame_e2g_r = []
+        invalid_marker = [float('nan')] * 4  # 使用 NaN 表示无效数据
 
         for index in indices:
             if index == -1:
@@ -828,6 +807,7 @@ class NuScenesE2EDataset(NuScenesDataset):
                 l2e_t_vecs.append(None)
                 e2g_r_mats.append(None)
                 e2g_t_vecs.append(None)
+                future_frame_e2g_r.append(invalid_marker)  # 使用 NaN 标记无效数据
             else:
                 info = self.data_infos[index]
                 l2e_r = info['lidar2ego_rotation']

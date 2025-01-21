@@ -298,6 +298,7 @@ class UniAD(UniADTrack):
 
     #-----------照搬forward_test的前行传播计算逻辑，让Uniad的模块只给我计算输出，依次来训练IMU_head---------
     #-----------每次只读一帧图片进去，跟推理时候的数据处理逻辑一致，但是结合训练IMU_head的逻辑------------
+    @auto_fp16(apply_to=('img', 'points'))
     def forward_train_IMU(self,
                           img=None,
                           img_metas=None,
@@ -326,9 +327,9 @@ class UniAD(UniADTrack):
         gt_lane_labels = [gt_lane_labels]       
         gt_lane_masks = [gt_lane_masks]        
         command = command[0]
-        current_frame_e2g_r[0] = current_frame_e2g_r[0].squeeze(0)
-        previous_frame_e2g_r = [frame.squeeze(0) for frame in previous_frame_e2g_r]
-        gt_future_frame_e2g_r = [frame.squeeze(0) for frame in gt_future_frame_e2g_r]
+        current_frame_e2g_r[0] = current_frame_e2g_r[0].squeeze(0)                    #torch.size(1,4) --> torch.size(4) 
+        previous_frame_e2g_r = [frame.squeeze(0) for frame in previous_frame_e2g_r]   #[torch.size(1,4)] --> [torch.size(4)]
+        gt_future_frame_e2g_r = [frame.squeeze(0) for frame in gt_future_frame_e2g_r] #[torch.size(1,4)] --> [torch.size(4)]
 
 
         #----------检查 img_metas 是否是列表类型（没用，代码不会进去）-----------
@@ -336,7 +337,7 @@ class UniAD(UniADTrack):
             if not isinstance(var, list):
                 raise TypeError('{} must be a list, but got {}'.format(
                     name, type(var)))
-        img = [img] if img is None else img #废话，img[0]是1，6，3，928，1600（预处理后的图片大小）
+        img = [img] if img is None else img #废话，img[0]: torch.size(1，6，3，928，1600)（预处理后的图片大小）
 
         #-----------判断场景是否切换----------
         if img_metas[0][0]['scene_token'] != self.prev_frame_info['scene_token']:
@@ -359,13 +360,13 @@ class UniAD(UniADTrack):
             img_metas[0][0]['can_bus'][-1] = 0
         # following frames
         else:
-            img_metas[0][0]['can_bus'][:3] -= self.prev_frame_info['prev_pos']
-            img_metas[0][0]['can_bus'][-1] -= self.prev_frame_info['prev_angle']
+            img_metas[0][0]['can_bus'][:3] -= self.prev_frame_info['prev_pos']    #img_metas[0][0]['can_bus'][:3]记录全局坐标的变化量
+            img_metas[0][0]['can_bus'][-1] -= self.prev_frame_info['prev_angle']  #img_metas[0][0]['can_bus'][-1]记录车辆转向yaw的变化量
         self.prev_frame_info['prev_pos'] = tmp_pos
         self.prev_frame_info['prev_angle'] = tmp_angle
 
         #------------------推理的时候就只有curr_frame的图片，就6张图作为输入---------------
-        #-----注意：训练的代码中是3个frame的图片-----
+        #-----注意：训练的代码中是3个frame的图片，是一开始子啊cfg文件中的queue_length设定的-----
         img = img[0]
         img_metas = img_metas[0]
         timestamp = timestamp[0] if timestamp is not None else None

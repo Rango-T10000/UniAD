@@ -173,6 +173,8 @@ def main():
         _, world_size = get_dist_info()
         cfg.gpu_ids = range(world_size)
 
+    #-------------------------logger工具的初始化设置------------------
+    #-------------------------这里是存放在e.g.: './work_dirs/base_e2e_IMU/20250108_144423.log'--------------
     # create work_dir
     mmcv.mkdir_or_exist(osp.abspath(cfg.work_dir))
     # dump config
@@ -189,6 +191,7 @@ def main():
         logger_name = 'mmdet'
     logger = get_root_logger(
         log_file=log_file, log_level=cfg.log_level, name=logger_name)
+    #这里实例化了logger，后面要记录什么信息就使用logger.info(xxxxx)函数
 
     # init the meta dict to record some important information such as
     # environment info and seed, which will be logged
@@ -221,6 +224,8 @@ def main():
         train_cfg=cfg.get('train_cfg'),
         test_cfg=cfg.get('test_cfg'))
     model.init_weights()
+    #-------------通过日志记录器 logger 输出模型的详细结构信息--------------
+    logger.info(f'Model:\n{model}')
 
 
     #--------打印看一下是否Uniad的整个部分都被frozen，终端显示的行数有限可能打印不全---------
@@ -230,8 +235,8 @@ def main():
     #     else:
     #         print(f"Parameter {name} is not frozen")
 
-    #-------保存成一个json文件，全部检查一下是否Uniad的整个部分都被frozen---------
-    # 确保保存的文件夹存在
+    # #-------保存成一个json文件，全部检查一下是否Uniad的整个部分都被frozen---------
+    # # 确保保存的文件夹存在
     # output_dir = 'loss_images'
     # if not os.path.exists(output_dir):
     #     os.makedirs(output_dir)
@@ -240,7 +245,8 @@ def main():
     # # 检查模型及其父类所有参数的 requires_grad 状态
     # for name, param in model.named_parameters():
     #     params_status[name] = {
-    #         'requires_grad': param.requires_grad
+    #         'requires_grad': param.requires_grad,
+    #         'dtype': str(param.dtype)
     #     }
     # # 将结果保存为 JSON 文件
     # output_file = os.path.join(output_dir, 'model_params_status.json')
@@ -248,12 +254,10 @@ def main():
     #     json.dump(params_status, f, indent=4)
 
 
-    logger.info(f'Model:\n{model}')
-
     #--------------------------build dataset对象，即实例化对应的类--------------------------
     datasets = [build_dataset(cfg.data.train)]
 
-
+    #--------------------------设置workflow: E.g, [('train', 2), ('val', 1)] 意思是tra 2个Epoch, 再val 1个Epo------------
     if len(cfg.workflow) == 2:
         val_dataset = copy.deepcopy(cfg.data.val)
         # in case we use a dataset wrapper

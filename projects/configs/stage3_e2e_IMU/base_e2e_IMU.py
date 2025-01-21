@@ -38,7 +38,7 @@ bev_w_ = 200
 _feed_dim_ = _ffn_dim_
 _dim_half_ = _pos_dim_
 canvas_size = (bev_h_, bev_w_)
-queue_length = 3  # each sequence contains `queue_length` frames.
+queue_length = 3  # each sequence contains `queue_length` frames. 3 or 5
 
 ### traj prediction args ###
 predict_steps = 12
@@ -51,6 +51,7 @@ use_nonlinear_optimizer = True
 occ_n_future = 4	
 occ_n_future_plan = 6	
 occ_n_future_max = max([occ_n_future, occ_n_future_plan])	
+occ_receptive_field = 6 #这个决定了prepare data的时候previous frame的数量，这里是6，但是其实那里取前5帧
 
 ### planning ###
 planning_steps = 6
@@ -456,7 +457,7 @@ model = dict(
         with_adapter=True,
     ),
     IMU_head=dict(            #------加入IMU预测模块------
-        type='IMUHead'
+        type='IMU_head'
     ),
     # model training and testing settings
     train_cfg=dict(
@@ -622,7 +623,7 @@ data = dict(
         fut_steps=fut_steps,
         use_nonlinear_optimizer=use_nonlinear_optimizer,
 
-        occ_receptive_field=3,
+        occ_receptive_field=occ_receptive_field,
         occ_n_future=occ_n_future_max,
         occ_filter_invalid_sample=False,
         
@@ -649,7 +650,7 @@ data = dict(
         eval_mod=['det', 'map', 'track','motion'],
         
 
-        occ_receptive_field=3,
+        occ_receptive_field=occ_receptive_field,
         occ_n_future=occ_n_future_max,
         occ_filter_invalid_sample=False,
     ),
@@ -686,6 +687,10 @@ optimizer = dict(
     weight_decay=0.01,
 )
 optimizer_config = dict(grad_clip=dict(max_norm=35, norm_type=2))
+
+#开启fp16训练
+fp16 = dict(loss_scale='dynamic')
+
 # learning policy
 lr_config = dict(
     policy="CosineAnnealing",
@@ -695,7 +700,7 @@ lr_config = dict(
     min_lr_ratio=1e-3,
 )
 #--------------------------------在这里指定训练多少个epoch---------------------------
-total_epochs = 80   #注意，每训20个epoch，想再继续的话这这里就得改大！
+total_epochs = 5   #注意，每训20个epoch，想再继续的话这这里就得改大！
 
 evaluation = dict(
     interval=4,  #这个是基于你下面是EpochBasedRunner还是IterBasedRunner

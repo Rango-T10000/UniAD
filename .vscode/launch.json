@@ -55,7 +55,7 @@
                 "--nproc_per_node=1",  // 这里设置进程数量，修改为你需要的GPU数
                 "tools/test.py",
                 "./projects/configs/stage3_e2e_IMU/base_e2e_IMU.py",
-                "./projects/work_dirs/stage3_e2e_IMU/base_e2e_IMU/latest.pth",  //应该换成训练好的最新的模型参数
+                "./projects/work_dirs/stage3_e2e_IMU/base_e2e_IMU/2024_10_20_80_epochs/epoch_80.pth",  //应该换成训练好的最新的模型参数
                 "--launcher", "pytorch"
             ],
             "env": {

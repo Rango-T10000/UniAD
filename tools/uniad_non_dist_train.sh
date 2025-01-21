@@ -30,7 +30,6 @@ python $(dirname "$0")/train.py \
     $CFG \
     --launcher none \
     --deterministic \
-    --resume-from projects/work_dirs/stage3_e2e_IMU/base_e2e_IMU/latest.pth \
     --work-dir ${WORK_DIR} \
     2>&1 | tee ${WORK_DIR}logs/train.$T
 
