@@ -700,7 +700,7 @@ lr_config = dict(
     min_lr_ratio=1e-3,
 )
 #--------------------------------在这里指定训练多少个epoch---------------------------
-total_epochs = 5   #注意，每训20个epoch，想再继续的话这这里就得改大！
+total_epochs = 30   #注意，每训20个epoch，想再继续的话这这里就得改大！
 
 evaluation = dict(
     interval=4,  #这个是基于你下面是EpochBasedRunner还是IterBasedRunner
